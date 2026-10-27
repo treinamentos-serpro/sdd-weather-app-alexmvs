@@ -17,13 +17,14 @@ const city = {
 };
 
 function mockResponse(body: unknown, status = 200) {
-  return vi
-    .spyOn(globalThis, 'fetch')
-    .mockImplementation(async () => new Response(JSON.stringify(body), { status }));
+  const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(body), { status }));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -136,6 +137,26 @@ describe('getWeather', () => {
         },
       })),
     );
+  });
+
+  it('não transforma precipitação nula em zero nem perde os demais campos', async () => {
+    freezeTime();
+    const body = forecastResponse();
+    mockResponse({
+      ...body,
+      current: { ...body.current, precipitation: null },
+      daily: { ...body.daily, precipitation_sum: [null, 0, 2, 3, 4] },
+    });
+
+    const result = await getWeather(city);
+
+    expect(result.current.precipitationMm).toEqual({ available: false });
+    expect(result.current.temperatureC).toEqual({ available: true, value: 22.4 });
+    expect(result.forecast).toHaveLength(5);
+    expect(result.forecast[0].precipitationMm).toEqual({ available: false });
+    expect(result.forecast[0].maxTemperatureC).toEqual({ available: true, value: 25 });
+    expect(result.forecast[1].precipitationMm).toEqual({ available: true, value: 0 });
+    expect(result.forecast[2].precipitationMm).toEqual({ available: true, value: 2 });
   });
 
   it.each([
@@ -297,7 +318,8 @@ describe('getWeather', () => {
 
 describe('searchCities', () => {
   it.each(['', '   ', '\t\n'])('retorna lista vazia sem acessar a rede para %j', async (name) => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
 
     await expect(searchCities(name)).resolves.toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();

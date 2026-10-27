@@ -1,12 +1,54 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import CurrentWeather from '../../../src/components/CurrentWeather';
 import UnitToggle from '../../../src/components/UnitToggle';
+import { mockWeatherData } from '../../../src/mocks/weather';
 import type { Unit } from '../../../src/types/weather';
 
 afterEach(cleanup);
 
 describe('UnitToggle', () => {
+  it.each([
+    0, 25.4,
+  ])('converte %s °C ao clicar e retorna à origem sem acumular arredondamento', async (temperatureC) => {
+    const user = userEvent.setup();
+    function WeatherWithUnit() {
+      const [unit, setUnit] = useState<Unit>('celsius');
+      return (
+        <>
+          <UnitToggle unit={unit} onChange={setUnit} />
+          <CurrentWeather
+            city={mockWeatherData.city}
+            current={{
+              ...mockWeatherData.current,
+              temperatureC: { available: true, value: temperatureC },
+            }}
+            unit={unit}
+          />
+        </>
+      );
+    }
+    render(<WeatherWithUnit />);
+    const weather = screen.getByRole('region', { name: mockWeatherData.city.name });
+    const celsius = screen.getByRole('button', { name: 'Graus Celsius' });
+    const fahrenheit = screen.getByRole('button', { name: 'Graus Fahrenheit' });
+    const original = temperatureC === 0 ? '0,0 °C' : '25,4 °C';
+    const converted = temperatureC === 0 ? '32,0 °F' : '77,7 °F';
+
+    expect(weather).toHaveTextContent(original);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await user.click(fahrenheit);
+      expect(weather).toHaveTextContent(converted);
+      expect(fahrenheit).toHaveAttribute('aria-pressed', 'true');
+      expect(weather).not.toHaveTextContent(original);
+      await user.click(celsius);
+      expect(weather).toHaveTextContent(original);
+      expect(celsius).toHaveAttribute('aria-pressed', 'true');
+    }
+  });
+
   it.each<Unit>(['celsius', 'fahrenheit'])('indica a unidade %s recebida pela prop', (unit) => {
     const onChange = vi.fn();
     render(<UnitToggle unit={unit} onChange={onChange} />);

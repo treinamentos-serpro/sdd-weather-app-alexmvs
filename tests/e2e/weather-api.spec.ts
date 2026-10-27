@@ -128,6 +128,7 @@ for (const operation of ['search', 'current', 'forecast'] as const) {
       release = resolve;
     });
     let attempts = 0;
+    let lateResponseCompleted = false;
     const pattern =
       operation === 'search'
         ? 'https://geocoding-api.open-meteo.com/v1/search?**'
@@ -152,6 +153,7 @@ for (const operation of ['search', 'current', 'forecast'] as const) {
                   current: { ...forecastResponse.current, temperature_2m: -99 },
                 },
         });
+        lateResponseCompleted = true;
       } else {
         await route.fulfill({
           json: operation === 'search' ? { results: [city] } : forecastResponse,
@@ -198,7 +200,7 @@ for (const operation of ['search', 'current', 'forecast'] as const) {
         }),
       ).toBeVisible();
     release();
-    await page.clock.runFor(50);
+    await expect.poll(() => lateResponseCompleted).toBe(true);
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByText('-99,0 °C', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('option', { name: /Antiga/ })).toHaveCount(0);
@@ -262,10 +264,12 @@ test('editar cancela clima em andamento e uma resposta obsoleta não reaparece',
     release = resolve;
   });
   let started = 0;
+  let completed = 0;
   await page.route('https://api.open-meteo.com/v1/forecast?**', async (route) => {
     started++;
     await pending;
     await route.fulfill({ json: forecastResponse });
+    completed++;
   });
   await page.goto('/');
   await page.getByLabel('Cidade', { exact: true }).fill('Sal');
@@ -274,7 +278,7 @@ test('editar cancela clima em andamento e uma resposta obsoleta não reaparece',
   await expect.poll(() => started).toBe(2);
   await page.getByLabel('Cidade', { exact: true }).fill('Sa');
   release();
-  await page.clock.runFor(100);
+  await expect.poll(() => completed).toBe(2);
   await expect(page.getByRole('heading', { name: 'Como está o clima?' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Salvador' })).toHaveCount(0);
   await expect(page.getByRole('listitem')).toHaveCount(0);

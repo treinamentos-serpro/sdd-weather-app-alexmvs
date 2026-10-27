@@ -6,6 +6,15 @@ import {
 } from '../../src/lib/temperature';
 
 describe('temperature', () => {
+  it.each([
+    [0, 32],
+    [100, 212],
+    [-40, -40],
+  ])('converte %s °C para %s °F e de volta', (celsius, fahrenheit) => {
+    expect(celsiusToFahrenheit(celsius)).toBe(fahrenheit);
+    expect(fahrenheitToCelsius(fahrenheit)).toBe(celsius);
+  });
+
   it('converte nas duas direções sem arredondar a origem', () => {
     expect(celsiusToFahrenheit(20)).toBe(68);
     expect(celsiusToFahrenheit(10)).toBe(50);
@@ -20,6 +29,10 @@ describe('temperature', () => {
     [1.25, 'celsius', '1,3 °C'],
     [-1.25, 'celsius', '-1,3 °C'],
     [0, 'celsius', '0,0 °C'],
+    [0, 'fahrenheit', '32,0 °F'],
+    [100, 'fahrenheit', '212,0 °F'],
+    [1.25, 'fahrenheit', '34,3 °F'],
+    [-18.75, 'fahrenheit', '-1,8 °F'],
     [-40, 'fahrenheit', '-40,0 °F'],
   ] as const)('formata %s em %s como %s', (value, unit, expected) => {
     expect(formatTemperature(value, unit)).toBe(expected);
@@ -29,7 +42,9 @@ describe('temperature', () => {
     Number.NaN,
     Number.POSITIVE_INFINITY,
     Number.NEGATIVE_INFINITY,
-  ])('rejeita temperatura não finita (%s)', (value) => {
-    expect(() => formatTemperature(value, 'celsius')).toThrow(RangeError);
+  ])('rejeita temperatura não finita nas duas unidades (%s)', (value) => {
+    for (const unit of ['celsius', 'fahrenheit'] as const) {
+      expect(() => formatTemperature(value, unit)).toThrow(RangeError);
+    }
   });
 });

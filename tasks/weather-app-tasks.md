@@ -42,6 +42,38 @@ Validação final: `pnpm lint`, `pnpm check` e `pnpm build` aprovados;
 `pnpm test:e2e --workers=1` aprovado (**44 testes**, Chromium desktop e
 WebKit com emulação mobile). Não há aprovação automática de produção.
 
+### Complemento de cobertura — conversão, API e E2E (27/10/2026)
+
+- T-29/T-34: referências 0 °C → 32 °F, 100 °C → 212 °F e −40 °C → −40 °F,
+  conversão inversa, arredondamento em Fahrenheit e integração do controle
+  com as condições atuais, incluindo alternâncias repetidas sem perda da origem.
+- T-07/T-10/T-30: respostas determinísticas com `vi.stubGlobal('fetch', ...)`
+  e restauração dos globals; regressão de precipitação nula com os demais
+  campos válidos, distinguindo indisponibilidade de zero e preservando índices.
+- T-20/T-21: novos fluxos em [weather.spec.ts](../tests/e2e/weather.spec.ts)
+  para busca com seleção explícita, conversão dos onze valores de temperatura,
+  geocoding sem `results`, viewport 375×812, seções `current`/`daily` ausentes
+  com retry isolado e precipitação nula com conversão dos campos válidos.
+- Revisão de flakiness: relógio fixo e rotas interceptadas antes da navegação;
+  queries por role/label com escopo de região; as esperas de 50/100 ms para
+  respostas obsoletas foram substituídas pela conclusão observável dos mocks.
+  O seletor `time[datetime]` da suíte anterior verifica um atributo semântico
+  da data, não uma classe visual; para interações, manter role/label.
+
+Contratos preservados conforme a spec vigente: uma casa decimal, rótulo
+“Previsão diária”, datas com dia da semana e data completa, precipitação nula
+indisponível (nunca zero). Não foram criadas funções ausentes do domínio atual.
+Os casos de SearchBar vazio/termo, códigos WMO/fallback, formatação de datas,
+HTTP/rede/JSON, timeout e cancelamento já estavam cobertos e foram mantidos.
+Continuam fora da comprovação automatizada: leitor de tela manual, dispositivos
+reais, atualidade do modelo, privacidade e desempenho operacional.
+
+Validação deste complemento: `pnpm lint` e `pnpm build` aprovados;
+`pnpm test` aprovado (**383 testes, 17 arquivos**);
+`pnpm test:e2e --workers=1` aprovado (**56 testes**, Chromium desktop e
+WebKit com emulação mobile). `pnpm exec biome check` nos cinco arquivos de
+testes alterados também aprovado.
+
 ### Histórico substituído — fluxo agregado
 
 Escopo solicitado para esta etapa, conforme complementos da spec e do plano:
