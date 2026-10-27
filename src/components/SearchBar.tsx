@@ -75,6 +75,11 @@ export default function SearchBar({
       inputRef.current?.focus();
       return;
     }
+    if (trimmedCity.replace(/\s/g, '').length < 3) {
+      setError('Digite pelo menos 3 letras para buscar cidades.');
+      inputRef.current?.focus();
+      return;
+    }
 
     setError('');
     onSearch(trimmedCity);
@@ -134,7 +139,7 @@ export default function SearchBar({
       aria-label="Buscar cidade"
       onSubmit={handleSubmit}
       onBlur={handleBlur}
-      className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4 font-sans text-white shadow-glass backdrop-blur-md"
+      className="relative z-20 min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4 font-sans text-white shadow-glass backdrop-blur-md"
     >
       <label htmlFor={inputId} className="mb-2 block text-sm font-medium">
         Cidade
@@ -197,7 +202,7 @@ export default function SearchBar({
           id={listboxId}
           role="listbox"
           aria-label="Sugestões de cidades"
-          className="mt-2 max-h-60 min-w-0 overflow-y-auto rounded-xl border border-slate-500 bg-night-800 p-1 shadow-glass"
+          className="absolute inset-x-0 top-full z-20 mt-2 max-h-60 min-w-0 overflow-y-auto rounded-xl border border-slate-500 bg-night-800 p-1 shadow-glass"
         >
           {suggestions.map((suggestion, index) => {
             return (

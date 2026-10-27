@@ -2,6 +2,51 @@
 
 **Status:** decisões de produto registradas; os gates de lançamento ao final ainda precisam ser resolvidos antes da aprovação da v1.
 
+## Integração incremental aprovada — 27/10/2026
+
+### Complemento vigente — conclusão da integração
+
+Decisão posterior: restaurar seleção explícita e estados/retries independentes
+para busca, condições atuais e previsão. Enviar o formulário apenas repete a
+busca de sugestões; nunca escolhe automaticamente a primeira cidade.
+Preservar o mínimo de 3 caracteres não brancos e debounce de 300 ms.
+Cada operação tem timeout de 5 s; editar, substituir ou desmontar cancela
+fisicamente as requisições e invalida respostas antigas. A unidade permanece
+no App e não dispara rede. Dados meteorológicos totalmente indisponíveis
+produzem `empty`, parcialmente disponíveis produzem `partial`.
+Esta decisão prevalece sobre o fluxo agregado descrito no histórico abaixo.
+
+Limitação confirmada na documentação oficial: `current.time` é o instante do
+passo de dados, não a atualização da rodada do modelo. Nesta integração,
+`updatedAt` é `null` e a UI informa horário de atualização desconhecido.
+Não se presume cumprimento da RNF-04 (atualização ≤1 h): comprovar a origem
+e atualidade do modelo, ou aprovar revisão desse requisito, continua sendo
+um bloqueador de lançamento. As evidências e os demais gates externos estão
+no [registro T-22 do plano](../plans/weather-app-plan.md#evidências-do-provedor--t-22-consulta-em-27102026).
+
+### Histórico substituído — fluxo agregado
+
+Para a etapa atual do treinamento, este complemento prevalece sobre a seleção
+explícita, debounce e estados independentes descritos abaixo:
+
+- Ao digitar pelo menos 3 caracteres não brancos, buscar sugestões após
+  300 ms sem nova digitação. A digitação consulta apenas geocoding, nunca clima.
+  Abaixo do mínimo, limpar sugestões sem chamar a rede.
+- Selecionar uma sugestão carrega seu clima; o envio explícito do formulário
+  continua disponível e carrega automaticamente a primeira cidade encontrada.
+- `search(name)` busca cidades e carrega automaticamente o clima da primeira.
+  As demais cidades continuam selecionáveis por clique ou teclado.
+- Estado agregado `idle | loading | success | error | empty`, com dados,
+  cidades, erro e consulta sob responsabilidade de `useWeather`.
+- Busca sem resultados produz `empty`; falha de busca ou clima produz `error`.
+  `retry()` repete a etapa que falhou, com a mesma consulta ou cidade.
+- Editar o texto invalida dados e operações anteriores. Respostas obsoletas ou
+  concluídas após desmontagem não alteram a tela.
+- Unidade permanece no App; trocá-la não consulta a rede.
+- O aviso anterior à busca identifica o envio de nome e coordenadas à
+  Open-Meteo. Gates do provedor, timeout e retry independente por seção
+  permanecem pendentes; esta entrega não aprova o lançamento da v1.
+
 ## Overview
 
 Aplicação web responsiva, mobile-first e em pt-BR para pesquisar uma cidade, consultar suas condições meteorológicas atuais e ver a previsão diária de hoje e dos quatro dias seguintes. A pessoa seleciona a localidade explicitamente; não é necessário criar conta. A fonte de dados definida é o Open-Meteo, sem API key.

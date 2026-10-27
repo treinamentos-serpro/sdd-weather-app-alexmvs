@@ -1,138 +1,174 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../../src/App';
 import { mockWeatherData } from '../../src/mocks/weather';
+import {
+  getCurrentWeather,
+  getForecast,
+  searchCities,
+  WeatherServiceError,
+} from '../../src/services/weatherService';
 
+vi.mock('../../src/services/weatherService', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/services/weatherService')>();
+  return { ...original, searchCities: vi.fn(), getCurrentWeather: vi.fn(), getForecast: vi.fn() };
+});
+const city = mockWeatherData.city;
+const otherCity = { ...city, admin1: 'Outra região', latitude: 10 };
+beforeEach(() => {
+  vi.mocked(searchCities).mockResolvedValue([city, otherCity]);
+  vi.mocked(getCurrentWeather).mockResolvedValue(mockWeatherData.current);
+  vi.mocked(getForecast).mockResolvedValue(mockWeatherData.forecast);
+});
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
+  vi.resetAllMocks();
 });
 
-async function selectSalvador(user: ReturnType<typeof userEvent.setup>, index = 0) {
-  await user.type(screen.getByLabelText('Cidade'), 'Salvador');
-  const list = await screen.findByRole('listbox');
-  const cityOptions = within(list).getAllByRole('option');
-  await user.click(cityOptions[index]);
+async function selectCity(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText('Cidade'), 'Sal');
+  await user.click(await screen.findByRole('option', { name: /Salvador.*Bahia/ }));
 }
 
-describe('App com dados mock', () => {
-  it('inicia sem seleção/persistência e mostra aviso antes da busca', () => {
+describe('App com API e estados independentes', () => {
+  it('inicia idle e avisa sobre compartilhamento antes da busca', () => {
     render(<App />);
-    expect(screen.getByRole('heading', { level: 1, name: 'Weather App' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Como está o clima?' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary')).toHaveTextContent('nome pesquisado é enviado');
+    expect(searchCities).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Graus Celsius' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
-    expect(screen.getByRole('heading', { name: 'Como está o clima?' })).toBeInTheDocument();
-    const disclosure = screen.getByRole('complementary', {
-      name: 'Fonte e compartilhamento de dados',
-    });
-    expect(disclosure).toHaveTextContent('não são enviados');
-    expect(
-      disclosure.compareDocumentPosition(screen.getByRole('search')) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
-  it('aguarda seleção explícita e usa os dados da segunda localidade homônima', async () => {
+  it('autocomplete permite escolher o segundo homônimo sem consulta antes da seleção', async () => {
     const user = userEvent.setup();
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
     render(<App />);
-    await user.type(screen.getByLabelText('Cidade'), 'Salvador');
-    await screen.findByRole('option', { name: /Salvador.*Bahia/ });
-    expect(screen.queryByRole('region', { name: 'Salvador' })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Cidade'), 'Sal');
+    await screen.findByRole('option', { name: /Outra região/ });
+    expect(getCurrentWeather).not.toHaveBeenCalled();
+    expect(getForecast).not.toHaveBeenCalled();
     await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
-    expect(screen.getByText('12,4 °C')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /Localidade selecionada: Salvador, Localidade de teste.*Condições e previsão disponíveis/,
-      ),
-    ).toHaveAttribute('aria-live', 'polite');
-    expect(screen.getByText('Localidade de teste (fictícia), Demonstração')).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Salvador' })).toHaveTextContent(
+      'Outra região',
+    );
+    expect(getCurrentWeather).toHaveBeenCalledWith(otherCity, expect.any(AbortSignal));
+    expect(getForecast).toHaveBeenCalledWith(otherCity, expect.any(AbortSignal));
     expect(screen.getAllByRole('listitem')).toHaveLength(5);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    await user.type(screen.getByLabelText('Cidade'), 'x');
-    expect(screen.queryByRole('region', { name: 'Salvador' })).not.toBeInTheDocument();
   });
 
-  it('mostra busca vazia sem tratar como erro e permite editar', async () => {
+  it('envio do formulário só lista cidades, sem escolher a primeira', async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.type(screen.getByLabelText('Cidade'), 'Recife');
-    expect(
-      await screen.findByRole('heading', { name: 'Nenhuma cidade encontrada' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Cidade'), 'Sal');
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    await screen.findByRole('option', { name: /Salvador.*Bahia/ });
+    expect(getCurrentWeather).not.toHaveBeenCalled();
+  });
+
+  it('envio abaixo de três letras mostra validação sem chamar rede', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(screen.getByLabelText('Cidade'), 'Sa');
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Digite pelo menos 3 letras');
+    expect(screen.getByLabelText('Cidade')).toHaveFocus();
+    expect(searchCities).not.toHaveBeenCalled();
+  });
+
+  it('mostra loading e vazio da busca com foco ao editar', async () => {
+    let resolve!: (value: []) => void;
+    vi.mocked(searchCities).mockReturnValue(
+      new Promise((res) => {
+        resolve = res;
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(screen.getByLabelText('Cidade'), 'Sal');
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Buscando cidades');
+    resolve([]);
+    await screen.findByRole('heading', { name: 'Nenhuma cidade encontrada' });
     await user.click(screen.getByRole('button', { name: 'Editar busca' }));
     expect(screen.getByLabelText('Cidade')).toHaveFocus();
   });
 
-  it('distingue candidatos inválidos e permite repetir apenas a busca', async () => {
+  it('retry de busca recupera erro e preserva consulta', async () => {
+    vi.mocked(searchCities).mockRejectedValueOnce(new WeatherServiceError('Falha de rede.'));
     const user = userEvent.setup();
     render(<App />);
-    await user.selectOptions(screen.getByLabelText('Cenário da busca'), 'invalid');
-    await user.type(screen.getByLabelText('Cidade'), 'Salvador');
+    await user.type(screen.getByLabelText('Cidade'), 'Sal');
+    await screen.findByRole('alert');
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    await screen.findByRole('region', { name: 'Resultado da busca' });
     expect(
-      await screen.findByRole('heading', { name: 'Não foi possível identificar a cidade' }),
+      await screen.findByText(/localidades encontradas.*consultar o clima/),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
-    expect(await screen.findByRole('option', { name: /Salvador.*Bahia/ })).toBeInTheDocument();
-    expect(screen.getByLabelText('Cidade')).toHaveValue('Salvador');
+    expect(screen.getByLabelText('Cidade')).toHaveValue('Sal');
+    expect(screen.getByRole('region', { name: 'Resultado da busca' })).toHaveFocus();
+    expect(getForecast).not.toHaveBeenCalled();
   });
 
-  it('recupera uma seção por vez, mantém a outra e preserva foco', async () => {
+  it.each([
+    'current',
+    'forecast',
+  ] as const)('retry de %s preserva a outra seção e unidade', async (operation) => {
+    const service = operation === 'current' ? vi.mocked(getCurrentWeather) : vi.mocked(getForecast);
+    service.mockRejectedValueOnce(new WeatherServiceError('Tempo limite', { kind: 'timeout' }));
     const user = userEvent.setup();
     render(<App />);
-    await selectSalvador(user);
-    await user.selectOptions(screen.getByLabelText('Cenário das condições'), 'error');
-    expect(screen.getByRole('alert')).toHaveTextContent('Condições meteorológicas');
-    expect(screen.getByRole('region', { name: 'Previsão diária' })).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Cenário da previsão'), 'timeout');
-    const currentSection = screen.getByRole('region', { name: 'Seção: Condições meteorológicas' });
-    await user.click(within(currentSection).getByRole('button', { name: 'Tentar novamente' }));
-    expect(currentSection).toHaveFocus();
-    expect(screen.getByRole('region', { name: 'Salvador' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Tempo limite excedido: Previsão diária');
-    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
-    expect(screen.getByRole('region', { name: 'Previsão diária' })).toBeInTheDocument();
-  });
-
-  it('exibe loading, vazio e parcial de previsão mantendo o hero', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await selectSalvador(user);
-    const section = screen.getByRole('region', { name: 'Seção: Previsão diária' });
-    await user.selectOptions(screen.getByLabelText('Cenário da previsão'), 'loading');
-    expect(within(section).getByRole('status')).toHaveTextContent('Carregando: Previsão diária');
-    expect(screen.getByRole('region', { name: 'Salvador' })).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Cenário da previsão'), 'empty');
-    expect(within(section).getByRole('heading')).toHaveTextContent(
-      'Dados indisponíveis: Previsão diária',
+    await selectCity(user);
+    const failedSection = screen.getByRole('region', {
+      name: operation === 'current' ? 'Seção: Condições meteorológicas' : 'Seção: Previsão diária',
+    });
+    expect(await within(failedSection).findByRole('alert')).toHaveTextContent(
+      'Tempo limite excedido',
     );
-    await user.selectOptions(screen.getByLabelText('Cenário da previsão'), 'partial');
-    expect(within(section).getAllByRole('listitem')).toHaveLength(5);
-    expect(within(section).getAllByText('Indisponível')).toHaveLength(6);
-  });
-
-  it('converte as onze temperaturas da origem sem modificar o mock', async () => {
-    const original = structuredClone(mockWeatherData);
-    const user = userEvent.setup();
-    const { unmount } = render(<App />);
-    await selectSalvador(user);
+    expect(
+      await screen.findByRole('region', {
+        name: operation === 'current' ? 'Previsão diária' : 'Salvador',
+      }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Graus Fahrenheit' }));
+    await user.click(within(failedSection).getByRole('button', { name: 'Tentar novamente' }));
+    await screen.findByRole('region', {
+      name: operation === 'current' ? 'Salvador' : 'Previsão diária',
+    });
+    expect(failedSection).toHaveFocus();
     expect(within(screen.getByRole('main')).getAllByText(/°F/)).toHaveLength(11);
-    await user.selectOptions(screen.getByLabelText('Cenário da previsão'), 'error');
-    await user.click(screen.getByRole('button', { name: 'Graus Celsius' }));
-    expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.getByText('25,4 °C')).toBeInTheDocument();
-    expect(mockWeatherData).toEqual(original);
-    unmount();
-    render(<App />);
-    expect(screen.getByLabelText('Cidade')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Graus Celsius' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
+    expect(getCurrentWeather).toHaveBeenCalledTimes(operation === 'current' ? 2 : 1);
+    expect(getForecast).toHaveBeenCalledTimes(operation === 'forecast' ? 2 : 1);
+    expect(searchCities).toHaveBeenCalledTimes(1);
+  });
+
+  it('renderiza parcial e vazio meteorológico sem inventar valores', async () => {
+    vi.mocked(getCurrentWeather).mockResolvedValue({
+      ...mockWeatherData.current,
+      humidityPercent: { available: false },
+    });
+    vi.mocked(getForecast).mockResolvedValue(
+      mockWeatherData.forecast.map(({ date }) => ({
+        date,
+        minTemperatureC: { available: false },
+        maxTemperatureC: { available: false },
+        conditionLabel: { available: false },
+        precipitationProbabilityPercent: { available: false },
+        precipitationMm: { available: false },
+        windKmh: { available: false },
+      })),
     );
+    const user = userEvent.setup();
+    render(<App />);
+    await selectCity(user);
+    expect(
+      await screen.findByText('Condições meteorológicas: dados parcialmente disponíveis.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Salvador' })).toHaveTextContent('Indisponível');
+    expect(
+      screen.getByRole('heading', { name: 'Dados indisponíveis: Previsão diária' }),
+    ).toBeInTheDocument();
   });
 });

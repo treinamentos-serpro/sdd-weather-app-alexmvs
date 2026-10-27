@@ -126,12 +126,38 @@ Texto vazio ou composto apenas por espaços retorna `[]` sem acessar a rede.
 O serviço adapta os resultados ao contrato `City`, filtra candidatos inválidos
 e preserva a ordem dos primeiros cinco válidos. Resultados ausentes ou vazios
 retornam `[]`; HTTP não-ok e respostas estruturalmente inválidas lançam
-`WeatherServiceError`. Falhas de rede e de JSON são propagadas.
+`WeatherServiceError`. Falhas de rede e JSON também são normalizadas para
+`WeatherServiceError`, preservando o erro original em `cause`.
 
-Esta entrega é parcial da T-06: ainda não inclui timeout, cancelamento ou
-integração com a interface, que permanece usando dados mock. O serviço está em
+Cada chamada tem timeout de 5 segundos, incluindo leitura do JSON, e aceita
+`AbortSignal` para cancelamento físico. Erros distinguem rede, HTTP,
+resposta inválida, timeout e cancelamento. O serviço está em
 `weatherService.ts`, conforme o desafio 7.1, em vez do arquivo separado
 `geocodingService.ts` previsto no plano.
+
+### Serviço de condições atuais e previsão
+
+[`getCurrentWeather`](src/services/weatherService.ts) e
+[`getForecast`](src/services/weatherService.ts) recebem uma `City` e um
+`AbortSignal` opcional e fazem chamadas independentes de condições e previsão.
+`getWeather` permanece como adaptador que agrega as duas chamadas.
+Solicitam Celsius, km/h, mm, `timezone=auto` e cinco dias. A previsão contém
+exatamente hoje e os quatro dias seguintes no fuso retornado, associando cada
+data ao índice original dos arrays paralelos. Datas ou valores ausentes não
+deslocam os dados dos outros dias.
+
+Valores finitos com unidades compatíveis são disponibilizados, inclusive zero.
+Campos inválidos ou ausentes e códigos WMO desconhecidos ficam indisponíveis.
+`current.time` representa o instante dos dados modelados, não a atualização
+do modelo. Não é usado como prova de atualidade: `updatedAt` permanece `null`
+e a UI informa horário de atualização desconhecido.
+HTTP não-ok, erro explícito da API, ausência de `current`/`daily` ou fuso
+inválido lançam `WeatherServiceError`; falhas de rede e JSON são normalizadas
+para o mesmo tipo, com causa original.
+
+As chamadas separadas permitem timeout, cancelamento e retry por seção sem
+apagar os dados válidos da outra. A validação de localidades e o cálculo de
+datas estão em funções puras de `lib/`, com testes de limites e fusos.
 
 ### Componente de busca
 
@@ -163,7 +189,8 @@ hora gera aviso de desatualização na renderização.
 em pt-BR com uma casa decimal e empates arredondados para longe de zero.
 [`weatherCodes`](src/lib/weatherCodes.ts) fornece ícones decorativos para
 rótulos conhecidos, sem inferir ícone para rótulos desconhecidos. O contrato
-atual fornece rótulos: o mapeamento de códigos WMO da API permanece na T-24.
+atual fornece rótulos; `getWeatherLabel` mapeia códigos WMO conhecidos para
+rótulos em pt-BR, retornando `null` para códigos desconhecidos.
 
 ### Previsão diária
 
@@ -176,7 +203,8 @@ e vento (km/h). Lista vazia e campos indisponíveis têm mensagens explícitas.
 
 `precipitationProbabilityPercent` é independente de `precipitationMm`, usa
 `WeatherField<number>` e aceita 0 a 100 inclusive. O mock inclui valores
-fictícios; a semântica do campo da API será confirmada no gate T-22.
+fictícios; o serviço só disponibiliza probabilidades finitas entre 0 e 100
+com unidade `%`, sem inferir probabilidade a partir de precipitação em mm.
 
 ### Estados de apresentação
 
@@ -195,44 +223,70 @@ São componentes de apresentação: a integração escolhe o estado, fornece
 mensagens específicas de operação/timeout e conecta os callbacks. Não fazem
 requisições nem disparam retry automaticamente.
 
-### Executando a tela mock
+### Executando a integração Open-Meteo
 
-Execute `pnpm dev` para abrir a aplicação composta em [`App`](src/App.tsx).
-A tela inicia sem cidade e em Celsius. Digite ao menos dois caracteres não
-brancos; após 300 ms, selecione uma sugestão de Salvador. O catálogo contém
-Salvador/Bahia e um homônimo explicitamente fictício, com dados distintos.
-Não há geocoding nem API: outras consultas retornam vazio. Editar o texto
-limpa seleção e dados; a unidade permanece independente.
+Execute `pnpm dev` para abrir [`App`](src/App.tsx). A tela inicia em `idle`,
+sem cidade e em Celsius. Digite um nome e envie com Buscar ou Enter:
+[`useWeather`](src/hooks/useWeather.ts) busca cidades, sem selecionar
+automaticamente. Ao digitar pelo menos 3 caracteres não brancos, após 300 ms
+sem nova digitação, o hook lista sugestões consultando apenas geocoding.
+Selecione uma cidade por clique ou setas/Enter para carregar seu clima;
+Escape fecha a lista. Abaixo de 3 caracteres, as sugestões são limpas.
+O envio do formulário apenas repete as sugestões (também exige 3 caracteres).
+O fluxo independente foi aprovado nos complementos da
+[spec](specs/weather-app-spec.md), do [plano](plans/weather-app-plan.md) e
+das [tarefas](tasks/weather-app-tasks.md).
 
-[`useMockWeather`](src/hooks/useMockWeather.ts) coordena debounce, seleção e
-estados independentes. Os controles “Cenário da busca”, “Cenário das condições”
-e “Cenário da previsão” simulam loading, vazio, parcial, erro, timeout e sucesso.
-Busca também permite simular candidatos inválidos. Os controles das seções
-são habilitados somente após a seleção explícita. Loading/timeout são manuais,
-não latência ou limite real de requisição.
+O hook expõe `query`, `suggestions`, `selectedCity`, `searchStatus`,
+`searchError`, `current` e `forecast`; cada seção tem `status`, `data` e `error`.
+As ações são `search(name)`, `selectCity(city)`, `changeQuery(query)`,
+`retrySearch()`, `retryCurrent()` e `retryForecast()`. O estado remoto fica
+no hook. O App mantém apenas a unidade; o combobox mantém somente interação
+visual e validação local de entrada. Trocar unidade converte na apresentação
+sem consulta de rede.
 
-“Tentar novamente” restaura apenas a operação escolhida; em busca, repete a
-consulta sem selecionar automaticamente. Dados válidos da outra seção e a
-unidade são preservados. Os dados parciais mantêm as cinco datas e assinalam
-indisponibilidade, sem usar valores de outra data. Todas as temperaturas são
-convertidas apenas na renderização; não há persistência ou geolocalização.
+“Tentar novamente” repete somente a operação da seção. Cada operação tem
+status independente, incluindo `partial`, `empty` e `timeout`; falhar ou
+repetir uma não apaga a outra. Editar limpa dados/cidades/erro e aborta todas
+as chamadas anteriores, sem mudar a unidade. Trocar cidade, repetir uma
+seção ou desmontar aborta as tentativas correspondentes. Mesmo que uma
+resposta antiga ignore o abort, ela não pode alterar o estado vigente.
+Timers de sugestões são cancelados na edição, envio, seleção e desmontagem.
 
-[`DataDisclosure`](src/components/DataDisclosure.tsx) explica o modo local
-antes da busca, sem afirmar atribuição aprovada ou política de retenção.
-A integração real, a atribuição definitiva e o gate T-22 continuam pendentes.
+Todos os URLs, `fetch` e mapeamentos estão em
+[`weatherService`](src/services/weatherService.ts); o hook não conhece a API.
+Erros esperados são `WeatherServiceError`; falhas inesperadas são registradas
+e apresentam mensagem segura, nunca resultado vazio ou sucesso fictício.
+
+Na revisão desta integração, falhas de rede e JSON antes escapavam com tipos
+diferentes dos erros HTTP; o helper `requestJson` unifica esse contrato.
+Também foi corrigido um clique perdido ao trocar a unidade: fechar a lista
+de sugestões no blur alterava o layout antes do clique terminar. O dropdown
+agora é sobreposto e não desloca os demais controles.
+
+[`DataDisclosure`](src/components/DataDisclosure.tsx) explica antes da busca
+que o nome e as coordenadas são enviados à Open-Meteo. Cita processamento de
+IP e logs por até 90 dias, conforme a política oficial. Credita Open-Meteo
+e GeoNames, inclui CC BY 4.0 e identifica adaptações. As fontes e decisões
+estão no [registro T-22 do plano](plans/weather-app-plan.md#evidências-do-provedor--t-22-consulta-em-27102026).
+A integração é experimental: avaliação de privacidade, enquadramento de
+produção e comprovação de atualidade do modelo ainda bloqueiam lançamento. Não há
+persistência nem geolocalização. O adaptador `useMockWeather` e seus controles
+permanecem disponíveis como material de treinamento, mas não são usados no App.
 
 ### Acessibilidade e responsividade
 
 Os campos têm labels associados e bordas contrastantes; controles nativos
 suportam teclado e foco visível. Busca inválida devolve foco ao campo; retry
 move foco ao conteúdo persistente para não perdê-lo quando o botão é removido.
-Sucesso e resultado vazio são anunciados por uma região `aria-live="polite"`;
+Sucesso é anunciado por uma região `aria-live="polite"`;
 loading e erros mantêm `status` e `alert` próprios, sem duplicar anúncios.
 Mensagens e valores longos podem quebrar linha, sem truncar informação.
 
-Os testes E2E verificam os cenários e entradas longas em 320, 375, 640,
-768, 1024 e 1440 px, o número real de colunas (2/3/5), teclado e contraste de
-texto dos botões, incluindo hover. Isso não substitui revisão com leitor de
+Os testes E2E interceptam geocoding e forecast, verificam busca, seleção,
+retry, conversão e entradas longas em 320, 375, 640, 768, 1024 e 1440 px,
+o número real de colunas (2/3/5), teclado e contraste de texto dos botões com
+e sem hover. Isso não substitui revisão com leitor de
 tela, zoom e navegadores suportados; a validação de contraste dos fundos
 translúcidos pressupõe a paleta escura atual, sem imagem de fundo.
 

@@ -1,5 +1,73 @@
 # Architecture
 
+## Decisão vigente — conclusão da integração (27/10/2026)
+
+Restaurar estados `SectionState` e retries independentes, seleção explícita,
+serviços separados `getCurrentWeather(city, signal?)` e
+`getForecast(city, signal?)`. Preservar `getWeather` como adaptador compatível.
+`searchCities(name, signal?)` aceita cancelamento. Serviços compartilham HTTP
+com timeout de 5000 ms, incluindo leitura do corpo, e erros tipados por
+`network`, `http`, `invalid-response`, `timeout` e `aborted`.
+Extrair validação e datas para funções puras com testes de fronteira.
+O hook usa AbortController e identificação de tentativas por operação;
+cancelamento por substituição não gera erro visível. Unidade fica no App.
+Autocomplete permanece em 3 caracteres/300 ms; envio apenas busca sugestões.
+Esta decisão substitui o fluxo agregado do complemento histórico abaixo.
+
+## Evidências do provedor — T-22 (consulta em 27/10/2026)
+
+Registro técnico, não parecer jurídico nem aprovação de lançamento. As fontes
+abaixo foram consultadas nesta data; a existência de termos do provedor não
+substitui a avaliação de privacidade do aplicativo.
+
+| Item | Resultado | Fonte oficial e evidência | Decisão / ação |
+| --- | --- | --- | --- |
+| Cobertura | Confirmado para integração, sem garantia por localidade | [Forecast API](https://open-meteo.com/en/docs): seleção automática dos modelos aplicáveis às coordenadas, modelos globais/regionais e séries contínuas. [Geocoding](https://open-meteo.com/en/docs/geocoding-api): busca por nome e localidades de GeoNames. | Usar coordenadas selecionadas; ausência de dados é `empty`/`partial`, não inventar dados. Não afirmar cobertura ou disponibilidade garantida para toda cidade. |
+| Licença meteorológica | Confirmado | [Licence](https://open-meteo.com/en/licence): dados de API sob CC BY 4.0, crédito visível, link de licença e indicação de adaptações. | Exibir Open-Meteo, CC BY 4.0 e aviso de tradução, validação e conversão de unidades. Não confundir licença de dados com AGPL do servidor. |
+| Licença de localidades | Confirmado | [Geocoding / Attribution](https://open-meteo.com/en/docs/geocoding-api): “Location data based on GeoNames”; [GeoNames / extract readme](https://download.geonames.org/export/dump/readme.txt): Creative Commons Attribution 4.0. [GeoNames / export](https://www.geonames.org/export/): atribuição por link ou referência. | Creditar GeoNames com link. O seletor “Usage licence” distingue modalidade de serviço, não é uma licença de dados diferente. |
+| Limites/custos/termos | Confirmado; enquadramento produtivo não confirmado | [Terms](https://open-meteo.com/en/terms): free API só para fins não comerciais, menos de 10.000 chamadas/dia, 5.000/hora e 600/minuto; bloqueio e limites por IP/aplicação, sem garantia de disponibilidade/precisão. | Manter uso experimental de treinamento. Debounce reduz chamadas, mas não garante quotas. Antes de publicar, responsável deve confirmar enquadramento não comercial ou contratar plano adequado e revisar volume. Cada seleção faz duas chamadas meteorológicas. |
+| Retenção/tratamento | Confirmado no provedor | [Terms / Privacy](https://open-meteo.com/en/terms#privacy): API gratuita pode processar IP; logs podem conter coordenadas e são apagados após 90 dias. | Aviso identifica nome, coordenadas, IP e logs; link para política. Não alegar que a API não armazena dados. O app não usa geolocalização do dispositivo nem persistência. |
+| Aviso/consentimento do aplicativo | Não confirmado — bloqueador de lançamento | [Terms / Privacy](https://open-meteo.com/en/terms#privacy) descreve o provedor; não determina base legal e consentimento válidos para cada implantação do aplicativo. | Aviso prévio implementado, sem coleta por geolocalização. Responsável pela implantação deve validar base legal, necessidade de consentimento, política própria e contexto LGPD antes de produção. |
+| Precipitação e probabilidade | Confirmado para exibição dos valores fornecidos | [Forecast / variable documentation](https://open-meteo.com/en/docs): `precipitation` é soma de precipitação (chuva/pancadas/neve), `precipitation_sum` é soma diária em mm; `precipitation_probability_max/mean/min` são probabilidades diárias em %, e probabilidade horária usa limiar maior que 0,1 mm. | Solicitar mm, validar `%` e intervalo [0,100]. Exibir máxima diária sem inferir probabilidade de mm. Não chamar dados modelados de medição observada nem inferir janela temporal apenas do nome do campo. |
+| Timestamp e atualidade | Incompatível com usar `current.time` como última atualização do modelo — bloqueador RNF-04 | [Forecast API](https://open-meteo.com/en/docs): current baseado em dados de modelo a cada 15 min. [Model Updates](https://open-meteo.com/en/docs/model-updates): atualizações por modelo e metadados separados; não se correlacionam diretamente com Forecast Best Match; consistência eventual e recomendação de mais 10 min. | `updatedAt: null`; UI mostra horário de atualização desconhecido. Não substituir pelo horário da consulta. Para cumprir garantia de atualização ≤1 h, validar estratégia de proveniência/metadata compatível ou aprovar revisão da RNF-04 antes do lançamento. |
+| WMO | Confirmado | [Forecast / WMO interpretation codes](https://open-meteo.com/en/docs): tabela oficial inclui 0–3, 45/48, 51/53/55, 56/57, 61/63/65, 66/67, 71/73/75, 77, 80/81/82, 85/86, 95/96/**97**/99. | Rótulos pt-BR registrados na [tabela completa](../src/lib/weatherCodes.ts) e verificados pelos [testes WMO](../tests/unit/weatherCodes.test.ts). 97 = “Heavy thunderstorm” → “Trovoada forte”. Qualquer código fora da tabela é indisponível. |
+
+### Atribuição adotada
+
+“Dados meteorológicos por Open-Meteo · Localidades baseadas em GeoNames ·
+CC BY 4.0”, com links para ambos os provedores e a licença. Informar:
+“Dados adaptados para apresentação: rótulos traduzidos, campos validados e
+temperaturas convertidas quando selecionado °F.” O aviso é visível antes
+da busca e permanece próximo à experiência de exibição dos dados.
+
+### Resultado do gate
+
+O levantamento T-22 está registrado, mas **o gate de lançamento não está
+aprovado**. Bloqueadores: avaliação de privacidade/base legal da implantação,
+enquadramento e quotas do ambiente produtivo, e comprovação de atualidade
+RNF-04. Manter versão identificada como experimental. O estado desses gates
+não é substituído por testes com mocks, nem por consulta isolada à API real.
+
+## Complemento da integração incremental — 27/10/2026
+
+Conforme o complemento da spec, a etapa atual usa `useWeather` com um estado
+agregado `{ status, data, cities, error, query }`. As ações são `search`,
+`selectCity`, `retry` e `changeQuery` (edição controlada com autocomplete).
+`changeQuery` limpa o estado anterior e agenda somente geocoding após 300 ms
+para consultas com ao menos 3 caracteres não brancos. A operação `suggest`
+lista cidades sem consultar forecast; retry preserva esse comportamento.
+O timer é cancelado na edição, envio, seleção, retry e desmontagem.
+`search` encadeia geocoding e forecast da primeira cidade; o último estágio
+tentado fica em uma ref discriminada por operação para retry sem novo
+geocoding quando somente forecast falhar. Um identificador incremental
+invalida respostas antigas e é invalidado na desmontagem. URLs, fetch,
+validação e normalização de erros com causa original ficam no serviço.
+Não há cópia de dados remotos nos componentes; apenas estado de interação
+do combobox e `unit` no App. A previsão usa a chamada combinada já existente.
+Este complemento prevalece sobre debounce, seleção exclusivamente explícita,
+unidade no hook e estados/retries por seção descritos no plano original.
+Timeout e cancelamento físico de requisições permanecem pendentes.
+
 Weather App será uma SPA responsiva em pt-BR organizada em quatro camadas.
 Dependências seguem em uma direção: apresentação → hooks → services → APIs
 externas. As funções puras de `lib/` podem ser chamadas pelas camadas que

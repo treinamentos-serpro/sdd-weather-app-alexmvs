@@ -1,16 +1,17 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import CurrentWeather from './components/CurrentWeather';
 import DataDisclosure from './components/DataDisclosure';
-import DemoControls from './components/DemoControls';
 import ForecastList from './components/ForecastList';
 import SearchBar from './components/SearchBar';
 import SearchFeedback from './components/SearchFeedback';
 import UnitToggle from './components/UnitToggle';
 import WeatherSection from './components/WeatherSection';
-import useMockWeather from './hooks/useMockWeather';
+import useWeather from './hooks/useWeather';
+import type { Unit } from './types/weather';
 
 export default function App() {
-  const weather = useMockWeather();
+  const weather = useWeather();
+  const [unit, setUnit] = useState<Unit>('celsius');
   const headerRef = useRef<HTMLElement>(null);
   function editSearch() {
     const input = headerRef.current?.querySelector<HTMLInputElement>('input[name="city"]');
@@ -45,20 +46,11 @@ export default function App() {
             onSelect={weather.selectCity}
             onSearch={weather.search}
           />
-          <UnitToggle unit={weather.unit} onChange={weather.setUnit} />
+          <UnitToggle unit={unit} onChange={setUnit} />
         </header>
-        <DemoControls
-          search={weather.searchScenario}
-          current={weather.currentScenario}
-          forecast={weather.forecastScenario}
-          hasCity={weather.selectedCity !== null}
-          onSearch={weather.changeSearchScenario}
-          onCurrent={weather.changeCurrentScenario}
-          onForecast={weather.changeForecastScenario}
-        />
         <p aria-live="polite" aria-atomic="true" className="sr-only">
           {weather.selectedCity
-            ? `Localidade selecionada: ${weather.selectedCity.name}, ${weather.selectedCity.admin1 ?? weather.selectedCity.country ?? ''}. Condições e previsão disponíveis.`
+            ? `Localidade selecionada: ${weather.selectedCity.name}, ${weather.selectedCity.admin1 ?? weather.selectedCity.country ?? ''}.`
             : ''}
         </p>
         <main
@@ -70,13 +62,11 @@ export default function App() {
           {!weather.selectedCity && (
             <SearchFeedback
               status={weather.searchStatus}
-              invalid={weather.searchScenario === 'invalid'}
+              invalid={false}
               count={weather.suggestions.length}
+              message={weather.searchError?.message}
               onEdit={editSearch}
-              onRetry={() => {
-                weather.retrySearch();
-                editSearch();
-              }}
+              onRetry={weather.retrySearch}
             />
           )}
           {weather.selectedCity && (
@@ -97,7 +87,7 @@ export default function App() {
                   <CurrentWeather
                     city={weather.selectedCity}
                     current={weather.current.data}
-                    unit={weather.unit}
+                    unit={unit}
                   />
                 )}
               </WeatherSection>
@@ -108,14 +98,18 @@ export default function App() {
                 onEdit={editSearch}
               >
                 {weather.forecast.data && (
-                  <ForecastList forecast={weather.forecast.data} unit={weather.unit} />
+                  <ForecastList forecast={weather.forecast.data} unit={unit} />
                 )}
               </WeatherSection>
             </>
           )}
         </main>
         <footer className="border-t border-white/10 pt-4 text-sm text-slate-400">
-          Dados fictícios para desenvolvimento da interface. Nenhuma consulta à API é realizada.
+          Dados meteorológicos por{' '}
+          <a className="underline" href="https://open-meteo.com/">
+            Open-Meteo
+          </a>
+          .
         </footer>
       </div>
     </div>

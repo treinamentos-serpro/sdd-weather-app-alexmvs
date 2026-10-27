@@ -10,14 +10,15 @@ export interface ErrorStateProps {
 
 export default function ErrorState({
   message,
-  operation = 'current',
+  operation,
   status = 'error',
   onRetry,
 }: ErrorStateProps) {
   return (
     <div className="min-h-40 min-w-0 w-full rounded-2xl border border-white/10 bg-white/5 p-6 font-sans text-white shadow-glass backdrop-blur-md [overflow-wrap:anywhere]">
       <p role="alert" className="text-red-300">
-        {status === 'timeout' ? 'Tempo limite excedido' : 'Falha'}: {operationLabels[operation]}.
+        {status === 'timeout' ? 'Tempo limite excedido' : 'Falha'}
+        {operation ? `: ${operationLabels[operation]}.` : ' ao carregar dados.'}
         {message && <> {message}</>}
       </p>
       <button

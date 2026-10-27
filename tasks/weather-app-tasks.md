@@ -2,6 +2,71 @@
 
 Tarefas derivadas de [weather-app-plan.md](../plans/weather-app-plan.md) e rastreadas à especificação [weather-app-spec.md](../specs/weather-app-spec.md). A ordem dentro de cada entrega respeita as dependências; os gates de lançamento não devem ser considerados aprovados sem evidência registrada.
 
+## Complemento de execução — integração incremental (27/10/2026)
+
+### Conclusão solicitada das tarefas parciais
+
+Decisão vigente: concluir serviços com timeout de 5 s e AbortSignal, funções
+puras de validação/datas e testes de fronteira; restaurar seleção explícita e
+estados/retries independentes de condições e previsão; manter unidade no App
+e autocomplete de 3 caracteres/300 ms. Atualizar unitários e E2E para
+homônimos, recuperação isolada, timeout, cancelamento e respostas obsoletas.
+Registrar evidências oficiais do gate T-22, com bloqueadores explícitos onde
+não houver confirmação, e alinhar o aviso/atribuição. Não confundir conclusão
+de implementação com aprovação dos gates de lançamento.
+Esta decisão prevalece sobre o fluxo combinado histórico descrito a seguir.
+
+### Situação atual da integração — 27/10/2026
+
+Esta tabela substitui os status dos complementos históricos e da entrega mock.
+“Concluída tecnicamente” não dispensa os gates externos de T-22.
+
+| Tarefas | Status atual | Evidência / limite |
+| --- | --- | --- |
+| T-02, T-05 | Concluídas | Validação pura de nome/coordenadas, limites inclusivos, ordem e cinco primeiros válidos; `src/lib/validation.ts` e `tests/unit/lib/validation.test.ts` |
+| T-03, T-27 | Concluídas | Cinco datas locais, viradas de calendário e fusos distintos/inválidos; `src/lib/dates.ts` e `tests/unit/lib/dates.test.ts` |
+| T-06, T-07 | Concluídas tecnicamente | Geocoding codificado, filtragem, erros HTTP/API/JSON/rede, timeout de 5 s e AbortSignal; testes em `tests/unit/services/weatherService.test.ts` |
+| T-08, T-10 | Implementação e testes de integração concluídos; RNF-04 bloqueada | Serviço atual independente, validação por campo/unidade e falhas tipadas. `current.time` não comprova atualização do modelo: `updatedAt` permanece `null`, inclusive quando o passo temporal é recente. Não declarar cumprimento de atualidade ≤1 h. |
+| T-09, T-30 | Concluídas tecnicamente | Serviço diário independente, cinco datas/índices, campos parciais e probabilidade; testes de erro, corpo pendente, timeout e abort |
+| T-11, T-12, T-13 | Concluídas | 3 caracteres/300 ms, seleção explícita, duas consultas simultâneas, cancelamento físico, descarte de resposta antiga e retry isolado; unidade no App sem nova rede |
+| T-18, T-47, T-48 | Concluídas tecnicamente | App conectado à API por hook, sem mock, busca e seleção explícita verificadas em desktop/mobile |
+| T-20, T-21 | Concluídas | E2E com rotas interceptadas: segundo homônimo/coordenadas, cinco dias, unidade, vazio, parcial, erro, timeout, retry isolado e resposta obsoleta |
+| T-24, T-26 | Concluídas | Tabela WMO oficial completa, incluindo 97 (“Trovoada forte”), rótulos e indisponibilidade testados |
+| T-35, T-39 | Concluídas tecnicamente | Aviso anterior à busca, Open-Meteo/GeoNames/CC BY 4.0, adaptações e retenção confirmada no provedor; avaliação jurídica da implantação não aprovada |
+| T-22 | Levantamento registrado; gate de lançamento bloqueado | Fontes oficiais e decisões no [plano](../plans/weather-app-plan.md#evidências-do-provedor--t-22-consulta-em-27102026); pendentes atualidade RNF-04, avaliação de privacidade/base legal e enquadramento produtivo |
+| T-23, T-41 | Não concluídas por esta entrega | Testes de teclado e Chromium/WebKit emulado não substituem leitor de tela manual nem matriz de versões/dispositivos reais |
+| T-42, T-43, T-44 | Pendentes, fora da conclusão das tarefas parciais de API | Sem medição de p95 por 30 dias, sintético real ou scheduler operacional; testes interceptados não comprovam esses gates |
+
+Validação final: `pnpm lint`, `pnpm check` e `pnpm build` aprovados;
+`pnpm test` aprovado (**373 testes, 17 arquivos**);
+`pnpm test:e2e --workers=1` aprovado (**44 testes**, Chromium desktop e
+WebKit com emulação mobile). Não há aprovação automática de produção.
+
+### Histórico substituído — fluxo agregado
+
+Escopo solicitado para esta etapa, conforme complementos da spec e do plano:
+
+- T-11/T-12: implementar `useWeather` agregado, busca explícita, carregamento
+  automático da primeira cidade, seleção alternativa, retry da última etapa
+  e invalidação na edição, nova operação ou desmontagem. Adicionar autocomplete
+  com mínimo de 3 caracteres não brancos e debounce de 300 ms; a digitação
+  busca somente cidades. Cancelar timers ao editar, enviar, selecionar e
+  desmontar. Retry de sugestões não deve carregar clima automaticamente.
+- T-18/T-39: substituir o mock no App, renderizar os cinco estados, manter
+  unidade na UI e divulgar corretamente envio de dados e fonte.
+- T-06/T-08/T-09: normalizar erros de rede/JSON no serviço com causa original;
+  conservar parâmetros, campos e mapeamento de arrays já implementados.
+- T-13/T-20/T-21/T-35: testar hook, integração, concorrência, retry e aviso;
+  substituir cenários E2E do demonstrador por rotas de API interceptadas.
+
+Aceite: nenhuma rede antes de 3 caracteres/300 ms ou na troca de unidade;
+digitação lista cidades sem forecast; sem resultados não
+consulta forecast; erro de forecast repete somente forecast; erro de busca
+repete busca; nenhum resultado obsoleto substitui a operação mais recente.
+As divergências em relação ao fluxo original são intencionais nesta etapa.
+T-22, timeout, cancelamento físico, estados independentes e validações manuais
+não são considerados concluídos.
+
 ## Matriz de rastreabilidade dos requisitos funcionais
 
 | Requisito da spec | Tarefas de implementação | Tarefas de teste/validação | Lacuna |
@@ -159,14 +224,14 @@ de atribuição aprovada ou da matriz de navegadores de produção.
 
 ### T-11 — Implementar busca, debounce e seleção explícita [P0/M]
 - **Descrição:** Criar a parte de busca do hook, coordenando texto, sugestões, debounce, retry e seleção da cidade.
-- **Critérios de aceite:** Com relógio falso, 1 caractere não inicia busca; 2 caracteres não brancos iniciam exatamente após 300 ms; texto vazio/espaços não chama serviço; editar antes do prazo cancela o timer e invalida resposta anterior; retry reutiliza o texto atual; selecionar resultado é a única ação que inicia forecast; resposta antiga não altera sugestões/status atuais.
+- **Critérios de aceite:** Com relógio falso, menos de 3 caracteres não brancos não inicia busca; 3 caracteres não brancos iniciam exatamente após 300 ms; texto vazio/espaços não chama serviço; editar antes do prazo cancela o timer e invalida resposta anterior; retry reutiliza o texto atual; selecionar resultado é a única ação que inicia forecast; resposta antiga não altera sugestões/status atuais.
 - **Dependências:** T-01, T-06.
 - **Arquivos prováveis:** `src/hooks/useWeather.ts`
 - **Tipo:** Data
 - **Rastreabilidade:** RF-01, RF-05; CA-01.1, CA-01.2, CA-01.5, CA-01.9, CA-01.10, CA-01.12; RNF-05, RNF-07.
 
 ### T-12 — Implementar carregamentos independentes de clima [P1/G]
-- **Descrição:** Completar o hook com seleção de cidade, condições atuais, previsão, unidade e retries por seção.
+- **Descrição:** Completar o hook com seleção de cidade, condições atuais, previsão e retries por seção; manter unidade exclusivamente como estado de UI no App.
 - **Critérios de aceite:** Selecionar uma cidade chama os serviços atual e diário uma vez cada antes de resolver qualquer um; troca de cidade limpa os dois dados anteriores; cada operação alcança `loading` e seu status final sem alterar o status da outra; retry chama somente o serviço da seção solicitada; timeout/cancelamento e resposta atrasada não atualizam estado; unidade inicial é Celsius e alterná-la não chama serviços.
 - **Dependências:** T-08, T-09, T-11.
 - **Arquivos prováveis:** `src/hooks/useWeather.ts`

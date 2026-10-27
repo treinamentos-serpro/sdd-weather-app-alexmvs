@@ -10,6 +10,7 @@ export interface SearchFeedbackProps {
   count: number;
   onEdit: () => void;
   onRetry: () => void;
+  message?: string;
 }
 
 export default function SearchFeedback({
@@ -18,6 +19,7 @@ export default function SearchFeedback({
   count,
   onEdit,
   onRetry,
+  message,
 }: SearchFeedbackProps) {
   const ref = useRef<HTMLElement>(null);
   function retry() {
@@ -42,7 +44,7 @@ export default function SearchFeedback({
       {status === 'idle' && (
         <EmptyState
           title="Como está o clima?"
-          hint="Digite ao menos dois caracteres e selecione uma sugestão de Salvador."
+          hint="Digite pelo menos 3 letras e selecione uma cidade nas sugestões."
           onEdit={onEdit}
         />
       )}
@@ -55,15 +57,15 @@ export default function SearchFeedback({
           title={invalid ? 'Não foi possível identificar a cidade' : 'Nenhuma cidade encontrada'}
           hint={
             invalid
-              ? 'Os candidatos simulados têm identificação inválida. Edite ou repita a busca.'
-              : 'Não há resultados locais para esta busca. Tente Salvador.'
+              ? 'Não foi possível identificar os candidatos retornados. Edite ou repita a busca.'
+              : 'Confira o nome ou tente outra cidade.'
           }
           onEdit={onEdit}
           onRetry={retry}
         />
       )}
       {(status === 'error' || status === 'timeout') && (
-        <ErrorState operation="search" status={status} onRetry={retry} />
+        <ErrorState operation="search" status={status} message={message} onRetry={retry} />
       )}
     </section>
   );
