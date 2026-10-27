@@ -14,6 +14,25 @@ Aplicação web responsiva, mobile-first e em pt-BR para pesquisar uma cidade, c
 
 ## Escopo da v1
 
+### Etapa de desenvolvimento com mock
+
+Antes da integração real, a tela usa dados fictícios de Salvador (Bahia).
+Inicia em `idle`, com Celsius. Após dois caracteres não brancos e 300 ms,
+apresenta até cinco sugestões locais válidas, com região/país; a seleção é
+explícita por clique ou setas/Enter, e Escape fecha a lista. Editar o texto
+invalida a seleção e os dados anteriores. O catálogo contém Salvador, Bahia,
+e uma localidade homônima de teste explicitamente identificada como fictícia,
+com coordenadas e dados próprios, para verificar a seleção sem cruzar cidades.
+Outras buscas retornam vazio; candidatos inválidos têm mensagem distinta.
+
+Controles de demonstração independentes de busca, condições e previsão
+permitem loading, vazio, parcial, erro, timeout e sucesso. Loading é manual
+até trocar o cenário ou tentar novamente; falha de uma seção não apaga outra.
+Retry restaura apenas a operação correspondente, preservando a consulta e a
+cidade. Não há rede, geolocalização nem persistência. Aviso prévio esclarece
+isso; conteúdo futuro de compartilhamento/atribuição depende do gate T-22,
+que permanece pendente, assim como integração real e validações manuais.
+
 ### Incluído
 
 - Busca de cidades por nome com sugestões enquanto a pessoa digita, seleção explícita de resultado e desambiguação por região e país quando disponíveis.
@@ -33,7 +52,7 @@ Aplicação web responsiva, mobile-first e em pt-BR para pesquisar uma cidade, c
 
 - **RF-01 — Buscar e selecionar cidades:** aceitar busca por nome de cidade e apresentar sugestões enquanto a pessoa digita. Iniciar a busca após pelo menos 2 caracteres não brancos e 300 ms sem digitação; cancelar ou ignorar respostas de consultas anteriores quando o texto mudar. Apresentar no máximo 5 resultados válidos, na ordem retornada pelo serviço, preservando a grafia recebida. A seleção é sempre explícita; não selecionar automaticamente. Identificar cada resultado pelo nome da cidade e, quando fornecidos, região administrativa e país. Não permitir selecionar um resultado sem nome de cidade ou coordenadas geográficas finitas dentro dos intervalos inclusivos de latitude −90° a 90° e longitude −180° a 180°. Não persistir cidade ou unidade entre sessões.
 - **RF-02 — Consultar condições atuais:** após selecionar uma cidade, apresentar temperatura, condição meteorológica em rótulo legível em pt-BR, umidade (%), vento (km/h), pressão (hPa) e precipitação (mm). Associar os dados à localidade selecionada e, quando fornecido pelo serviço, apresentar o horário de atualização. Código de condição desconhecido é indisponível, não deve ser interpretado ou inventado.
-- **RF-03 — Consultar previsão diária:** apresentar exatamente cinco datas consecutivas: a data atual e os quatro dias seguintes no fuso horário da cidade selecionada. Para cada data, apresentar temperatura mínima e máxima, condição meteorológica em rótulo legível em pt-BR, precipitação (mm) e vento (km/h). Identificar cada entrada com sua data local. Código de condição desconhecido é indisponível, não deve ser interpretado ou inventado.
+- **RF-03 — Consultar previsão diária:** apresentar exatamente cinco datas consecutivas: a data atual e os quatro dias seguintes no fuso horário da cidade selecionada. Para cada data, apresentar temperatura mínima e máxima, condição meteorológica em rótulo legível em pt-BR, probabilidade de chuva (%), precipitação (mm) e vento (km/h). Identificar cada entrada com sua data local. Código de condição desconhecido é indisponível, não deve ser interpretado ou inventado.
 - **RF-04 — Alternar unidade de temperatura:** iniciar cada sessão em Celsius e permitir alternar entre Celsius e Fahrenheit. Aplicar a unidade selecionada a todas as temperaturas atuais e previstas, sem alterar a cidade ou os demais dados. Converter usando `°F = (°C × 9/5) + 32` e `°C = (°F − 32) × 5/9`; converter o valor de origem, não o valor já arredondado, exibir uma casa decimal e arredondar empates para longe de zero. Identificar cada valor com `°C` ou `°F`. Não persistir a escolha entre sessões.
 - **RF-05 — Recuperar de falhas:** em erro ou timeout de busca, condições atuais ou previsão, informar qual operação falhou, preservar a busca ou cidade selecionada e oferecer nova tentativa. Uma falha em uma seção não deve ocultar dados válidos já carregados em outra.
 
@@ -79,7 +98,7 @@ Os critérios são a base verificável para testes de unidade, integração e fl
 ### US-04 — Previsão diária (RF-03, RF-05)
 
 - **CA-03.1:** Dada uma cidade com fuso horário conhecido, quando a previsão é exibida, então há exatamente cinco entradas, uma para cada data local entre hoje e o quarto dia seguinte, em ordem cronológica.
-- **CA-03.2:** Dada uma resposta diária completa com código de condição reconhecido, quando cada entrada é exibida, então apresenta mínima, máxima, condição em rótulo legível em pt-BR, precipitação e vento, com precipitação em mm e vento em km/h.
+- **CA-03.2:** Dada uma resposta diária completa com código de condição reconhecido, quando cada entrada é exibida, então apresenta mínima, máxima, condição em rótulo legível em pt-BR, probabilidade de chuva em %, precipitação em mm e vento em km/h. Probabilidade aceita valores finitos entre 0 e 100 inclusive; ausente ou inválida é indisponível, nunca inferida a partir da precipitação.
 - **CA-03.3:** Dados resultados homônimos com previsões distintas, quando uma localidade é selecionada, então todas as cinco entradas correspondem a essa localidade e exibem suas datas locais.
 - **CA-03.4:** Dada uma resposta com campos diários ausentes ou nulos, quando a previsão é exibida, então cada campo ausente é identificado como indisponível e não recebe valor de outra data.
 - **CA-03.5:** Dado um erro do serviço de previsão, quando ele ocorre, então a interface informa que a previsão falhou, mantém a cidade selecionada e oferece nova tentativa, sem ocultar condições atuais válidas.

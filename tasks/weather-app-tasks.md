@@ -29,6 +29,45 @@ Fechar acessibilidade manual, compatibilidade, desempenho, sintéticos e operaç
 
 ## Entrega 1 — Tipos
 
+### Complemento UI — Conclusão do demonstrador mock
+
+Escopo aprovado: concluir T-14 a T-18 e T-36 a T-39/T-47 na fonte simulada,
+sem implementar Open-Meteo. Adicionar hook `useMockWeather` com debounce,
+seleção explícita e invalidação; estados independentes e retry por operação;
+combobox acessível; catálogo com Salvador e homônimo fictício; controles de
+cenário incluindo parcial/timeout/candidatos inválidos; ações de editar e
+repetir; aviso de dados locais. Testar teclado, isolamento, troca de unidade,
+debounce, largura/altura dos estados e viewports desktop/mobile.
+T-22, a integração real das tarefas e os gates manuais T-23/T-41 não devem ser
+marcados como concluídos por esta entrega. Dependências de rede T-11/T-12
+continuam pendentes; o hook mock é exclusivamente um adaptador de demonstração.
+
+#### Situação da entrega mock — 27/10/2026
+
+| Tarefa | Situação no demonstrador | Limite da conclusão |
+| --- | --- | --- |
+| T-14 | Concluída | Combobox, homônimos, edição, clique, setas, Enter, Escape e seleção explícita com catálogo local |
+| T-15, T-17 | Concluídas | Apresentação e unidade; dados continuam fictícios |
+| T-16 | Concluída no mock | Cinco datas, indisponibilidade, parcial e retry isolado; fonte real pendente |
+| T-36 | Concluída no mock | `status` e estabilidade de largura/altura do contêiner sem conteúdo versus loading em 320/1440 px |
+| T-37, T-38 | Concluídas no mock | Mensagens distintas, ações editar/repetir, operação e erro/timeout com retry isolado |
+| T-39 | Aviso local implementado | Atribuição/aviso definitivos bloqueados por T-22; não concluída para produção |
+| T-47, T-18 | Concluídas na fonte simulada | Hook local, seleção, invalidação e seções independentes; integração Open-Meteo pendente |
+| T-19, T-31 a T-34, T-45, T-46 | Cobertura automatizada do mock implementada | Testes de rede e integração real não são substituídos por estes testes |
+| T-40 | Validada no mock | 320, 375, 640, 768, 1024 e 1440 px; T-20/T-48 de API permanecem pendentes |
+| T-35 | Aviso local testado | Texto definitivo da fonte depende de T-22 |
+| T-23 | Pendente | Sem execução manual de leitor de tela; testes de teclado não equivalem a revisão manual |
+| T-41 | Parcial | Chromium 149.0.7827.55 e WebKit 26.5 automatizados; não cobre duas versões de Chrome/Edge/Firefox/Safari, Safari iOS real ou Chrome Android real |
+
+Evidência automatizada: `pnpm lint`, `pnpm check` e `pnpm build` aprovados;
+`pnpm test` aprovado (108 testes); `pnpm test:e2e --workers=1` aprovado
+(26 testes nos projetos Chromium desktop e WebKit com emulação iPhone).
+Cobertura inclui ausência de chamada à API, debounce em 299/300 ms,
+cancelamento na edição/unmount, seleção do segundo homônimo, manutenção das
+cinco datas parciais, recuperação por operação, foco, contraste dos botões e
+ausência de transbordamento. Não há evidência de conformidade WCAG completa,
+de atribuição aprovada ou da matriz de navegadores de produção.
+
 ### T-01 — Definir os tipos internos do domínio [P0/M]
 - **Descrição:** Criar os contratos compartilhados de cidade, campos disponíveis, condições atuais, previsão, unidade, estados de operação e erros.
 - **Critérios de aceite:** O arquivo exporta `Unit`, `City`, `WeatherField<T>`, `CurrentWeather`, `ForecastDay`, `WeatherData`, `OperationStatus`, `SectionState<T>`, `WeatherError` e `WeatherState`; `WeatherField<T>` distingue disponível/indisponível e `WeatherError` distingue rede, HTTP, resposta inválida e timeout; `tsc --noEmit` passa em modo strict.
@@ -109,6 +148,7 @@ Fechar acessibilidade manual, compatibilidade, desempenho, sintéticos e operaç
 
 ### T-09 — Implementar serviço de previsão diária [P1/G]
 - **Descrição:** Consultar previsão e produzir exatamente cinco dias locais, sem deslocar valores entre datas quando arrays estiverem incompletos.
+- **Extensão RF-03:** Solicitar `precipitation_probability_max`, validar unidade `%` e valor finito no intervalo inclusivo [0, 100]; mapear para `precipitationProbabilityPercent`, marcando ausente/inválido como indisponível sem inferir de mm. Confirmar semântica em T-22 antes da integração real.
 - **Critérios de aceite:** A URL usa as coordenadas selecionadas, parâmetros de unidades, `forecast_days=5` e `timezone=auto`; fixture com arrays desalinhados/incompletos conserva cinco datas esperadas e não transfere valores entre índices/datas; timezone ausente/inválido não usa timezone do dispositivo; HTTP/API, estrutura inválida, rede, abort e timeout em 5 s retornam falha da previsão.
 - **Dependências:** T-01, T-03, T-24, T-25, T-22.
 - **Arquivos prováveis:** `src/services/weatherService.ts`
@@ -185,6 +225,7 @@ Fechar acessibilidade manual, compatibilidade, desempenho, sintéticos e operaç
 
 ### T-16 — Construir lista e cartões da previsão [P1/G]
 - **Descrição:** Exibir as cinco datas locais, valores meteorológicos e indisponibilidades por campo/dia.
+- **Extensão RF-03:** Cada card inclui probabilidade de chuva (%) independente de precipitação (mm), preservando também vento (km/h). `ForecastList` recebe `forecast` e `unit`; `ForecastCard` recebe `day` e `unit`. Rótulo pt-BR de dia/data via `lib/format`, ícone via `lib/weatherCodes` e temperaturas via `lib/temperature`; grid `grid-cols-2 sm:grid-cols-3 lg:grid-cols-5`. Cobrir probabilidade 0 e 100, indisponibilidade, datas sem deslocamento de fuso e conversão de mín/máx. Estados de erro/timeout e retry ficam na integração com o hook.
 - **Critérios de aceite:** Para uma fixture de previsão, renderiza exatamente cinco itens na ordem recebida; cada item contém mínima, máxima, condição, precipitação e vento com unidades; dia/campo sem dado permanece no item e exibe marcador de indisponibilidade; erro/timeout mostra retry da previsão e não remove a seção de condições atuais.
 - **Dependências:** T-12, T-03, T-04, T-25.
 - **Arquivos prováveis:** `src/components/ForecastList.tsx`, `src/components/ForecastCard.tsx`
@@ -218,6 +259,7 @@ Fechar acessibilidade manual, compatibilidade, desempenho, sintéticos e operaç
 - **Rastreabilidade:** RF-01; CA-01.1, CA-01.3, CA-01.4, CA-01.12; RNF-01, RNF-02.
 
 ### T-18 — Integrar a tela e divulgar fonte/compartilhamento [P1/G]
+- **Etapa mock:** Compor header e conteúdo com sugestões e seleção explícita de Salvador, hook local, controles independentes de busca/condições/previsão e estados `idle/loading/empty/partial/error/timeout/success`. Manter unidade independente, converter apenas na renderização e recuperar somente a operação solicitada. A integração real abaixo permanece pendente.
 - **Descrição:** Completar a integração da SPA iniciada em T-47, adicionando clima atual, previsão e alternância de unidade.
 - **Critérios de aceite:** `App` conecta o hook a condições atuais, previsão e unidade além da busca existente; renderiza loading/vazio/erro/parcial de cada operação a partir do status correspondente, sem cruzar estados entre seções; não solicita geolocalização nem persiste cidade/unidade.
 - **Dependências:** T-47, T-12, T-15, T-16, T-17.

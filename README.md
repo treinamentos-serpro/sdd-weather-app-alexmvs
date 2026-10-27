@@ -100,6 +100,147 @@ Decisões-chave:
 - **Rede isolada** em `services/` — componentes e hooks não conhecem URLs.
 - Sempre tratar **loading**, **erro** e **vazio**.
 
+### Dados mock para desenvolver a UI
+
+Os contratos estão em [`src/types/weather.ts`](src/types/weather.ts).
+Importe o objeto tipado de [`src/mocks/weather.ts`](src/mocks/weather.ts)
+no componente ou na tela em desenvolvimento:
+
+```ts
+import { mockWeatherData } from './mocks/weather';
+
+const { city, current, forecast } = mockWeatherData;
+```
+
+O mock contém dados fictícios de Salvador (Bahia) e cinco datas fixas, de 27 a
+31/10/2026, sem acesso à API. As temperaturas estão em Celsius, e o horário
+de atualização inclui o deslocamento do fuso da cidade. Cada campo
+meteorológico usa `WeatherField<T>`: leia `value` somente quando `available`
+for `true`; `{ available: false }` representa um dado indisponível, não zero.
+
+### Serviço de busca de cidades
+
+[`searchCities`](src/services/weatherService.ts) consulta o geocoding da
+Open-Meteo com o nome codificado, `count=100`, `language=pt` e `format=json`.
+Texto vazio ou composto apenas por espaços retorna `[]` sem acessar a rede.
+O serviço adapta os resultados ao contrato `City`, filtra candidatos inválidos
+e preserva a ordem dos primeiros cinco válidos. Resultados ausentes ou vazios
+retornam `[]`; HTTP não-ok e respostas estruturalmente inválidas lançam
+`WeatherServiceError`. Falhas de rede e de JSON são propagadas.
+
+Esta entrega é parcial da T-06: ainda não inclui timeout, cancelamento ou
+integração com a interface, que permanece usando dados mock. O serviço está em
+`weatherService.ts`, conforme o desafio 7.1, em vez do arquivo separado
+`geocodingService.ts` previsto no plano.
+
+### Componente de busca
+
+[`SearchBar`](src/components/SearchBar.tsx) mantém o modo simples com
+`onSearch(city: string)` e `disabled` opcional. No modo controlado, recebe
+`query`, `onQueryChange`, `suggestions` e `onSelect`. A lista é um combobox
+acessível: setas percorrem sugestões, Enter seleciona a opção ativa, Escape
+fecha a lista e clique seleciona a localidade exata. Enter sem opção ativa
+apenas repete a busca, nunca seleciona uma cidade automaticamente.
+Texto vazio exibe mensagem acessível e devolve foco ao campo.
+
+### Controle de unidade
+
+[`UnitToggle`](src/components/UnitToggle.tsx) recebe `unit: Unit` e
+`onChange(unit: Unit)`. É controlado: o componente pai mantém a unidade e
+atualiza a prop após o callback. Os botões °C/°F expõem o estado ativo via
+`aria-pressed`, em um grupo com nome acessível. Use Tab/Shift+Tab para navegar
+e Enter/Espaço para ativar. O controle não converte dados nem acessa a API.
+
+### Hero de condições meteorológicas
+
+[`CurrentWeather`](src/components/CurrentWeather.tsx) recebe `city`, `current`
+e `unit`. Exibe temperatura, condição e métricas com unidades, preserva zeros
+válidos e identifica campos indisponíveis. O timestamp é exibido com o
+deslocamento recebido; horário ausente é desconhecido e idade superior a uma
+hora gera aviso de desatualização na renderização.
+
+[`temperature`](src/lib/temperature.ts) converte e formata a origem Celsius
+em pt-BR com uma casa decimal e empates arredondados para longe de zero.
+[`weatherCodes`](src/lib/weatherCodes.ts) fornece ícones decorativos para
+rótulos conhecidos, sem inferir ícone para rótulos desconhecidos. O contrato
+atual fornece rótulos: o mapeamento de códigos WMO da API permanece na T-24.
+
+### Previsão diária
+
+[`ForecastList`](src/components/ForecastList.tsx) recebe `forecast: ForecastDay[]`
+e `unit`; [`ForecastCard`](src/components/ForecastCard.tsx) recebe `day` e `unit`.
+A lista preserva a ordem dos dias e usa duas, três ou cinco colunas conforme
+o viewport. Cada card apresenta dia/data em pt-BR sem deslocamento de fuso,
+condição, ícone, máxima/mínima, probabilidade de chuva (%), precipitação (mm)
+e vento (km/h). Lista vazia e campos indisponíveis têm mensagens explícitas.
+
+`precipitationProbabilityPercent` é independente de `precipitationMm`, usa
+`WeatherField<number>` e aceita 0 a 100 inclusive. O mock inclui valores
+fictícios; a semântica do campo da API será confirmada no gate T-22.
+
+### Estados de apresentação
+
+- [`LoadingState`](src/components/states/LoadingState.tsx): `role="status"`,
+  mensagem padrão “Carregando dados...” e prop `message` opcional para
+  identificar a operação. O indicador respeita a preferência por movimento reduzido.
+- [`ErrorState`](src/components/states/ErrorState.tsx): recebe `message` e
+  `onRetry`, com `operation` e `status` para distinguir busca/condições/previsão
+  e erro/timeout; anuncia a mensagem com `role="alert"` e oferece o botão
+  “Tentar novamente”, acessível por teclado.
+- [`EmptyState`](src/components/states/EmptyState.tsx): recebe `title` e `hint`
+  para distinguir ausência de cidades, localidades não identificáveis e dados
+  meteorológicos indisponíveis; `onEdit` e `onRetry` habilitam ações separadas.
+
+São componentes de apresentação: a integração escolhe o estado, fornece
+mensagens específicas de operação/timeout e conecta os callbacks. Não fazem
+requisições nem disparam retry automaticamente.
+
+### Executando a tela mock
+
+Execute `pnpm dev` para abrir a aplicação composta em [`App`](src/App.tsx).
+A tela inicia sem cidade e em Celsius. Digite ao menos dois caracteres não
+brancos; após 300 ms, selecione uma sugestão de Salvador. O catálogo contém
+Salvador/Bahia e um homônimo explicitamente fictício, com dados distintos.
+Não há geocoding nem API: outras consultas retornam vazio. Editar o texto
+limpa seleção e dados; a unidade permanece independente.
+
+[`useMockWeather`](src/hooks/useMockWeather.ts) coordena debounce, seleção e
+estados independentes. Os controles “Cenário da busca”, “Cenário das condições”
+e “Cenário da previsão” simulam loading, vazio, parcial, erro, timeout e sucesso.
+Busca também permite simular candidatos inválidos. Os controles das seções
+são habilitados somente após a seleção explícita. Loading/timeout são manuais,
+não latência ou limite real de requisição.
+
+“Tentar novamente” restaura apenas a operação escolhida; em busca, repete a
+consulta sem selecionar automaticamente. Dados válidos da outra seção e a
+unidade são preservados. Os dados parciais mantêm as cinco datas e assinalam
+indisponibilidade, sem usar valores de outra data. Todas as temperaturas são
+convertidas apenas na renderização; não há persistência ou geolocalização.
+
+[`DataDisclosure`](src/components/DataDisclosure.tsx) explica o modo local
+antes da busca, sem afirmar atribuição aprovada ou política de retenção.
+A integração real, a atribuição definitiva e o gate T-22 continuam pendentes.
+
+### Acessibilidade e responsividade
+
+Os campos têm labels associados e bordas contrastantes; controles nativos
+suportam teclado e foco visível. Busca inválida devolve foco ao campo; retry
+move foco ao conteúdo persistente para não perdê-lo quando o botão é removido.
+Sucesso e resultado vazio são anunciados por uma região `aria-live="polite"`;
+loading e erros mantêm `status` e `alert` próprios, sem duplicar anúncios.
+Mensagens e valores longos podem quebrar linha, sem truncar informação.
+
+Os testes E2E verificam os cenários e entradas longas em 320, 375, 640,
+768, 1024 e 1440 px, o número real de colunas (2/3/5), teclado e contraste de
+texto dos botões, incluindo hover. Isso não substitui revisão com leitor de
+tela, zoom e navegadores suportados; a validação de contraste dos fundos
+translúcidos pressupõe a paleta escura atual, sem imagem de fundo.
+
+T-23 (revisão manual com leitor de tela) e T-41 (matriz de duas versões por
+navegador) **não estão concluídas**. Emulação mobile no Playwright não equivale
+a Safari em dispositivo iOS real. Registre resultados manuais e versões reais
+antes de aprovar esses gates; o demonstrador não é evidência da integração API.
+
 ---
 
 ## Stack

@@ -62,6 +62,20 @@ somente na sessão atual (RF-01, RF-04, RNF-07).
 
 # Project Structure
 
+Na etapa mock, `App` compõe os componentes e `useMockWeather` mantém consulta,
+seleção, sugestões, unidade e estados independentes. O hook aplica debounce
+de 300 ms com limpeza do timer na edição/unmount; o catálogo e os cenários
+parciais ficam em `src/mocks/`. Não há serviços de rede. `src/main.tsx` monta React em `#root` e importa
+`src/styles/global.css` com as diretivas Tailwind. O mock identifica Salvador,
+Bahia, no fuso `America/Bahia`; temperaturas continuam em Celsius e são
+convertidas apenas nos componentes de apresentação. O seletor de cenário
+pertence apenas ao demonstrador. `SearchBar` aceita modo controlado com
+`query`, `onQueryChange`, `suggestions` e `onSelect`, preservando o modo de
+envio simples com `onSearch`. `WeatherSection` compõe estado e conteúdo,
+preservando foco em um contêiner persistente ao executar retry.
+`ErrorState` recebe operação/status; `EmptyState` oferece editar/repetir.
+`DataDisclosure` informa modo local sem atribuição aprovada inventada.
+
 Organização proposta em `src/`, seguindo as convenções do projeto:
 
 ```text
@@ -144,6 +158,7 @@ interface ForecastDay {
   minTemperatureC: WeatherField<number>;
   maxTemperatureC: WeatherField<number>;
   conditionLabel: WeatherField<string>;
+  precipitationProbabilityPercent: WeatherField<number>;
   precipitationMm: WeatherField<number>;
   windKmh: WeatherField<number>;
 }
@@ -293,7 +308,7 @@ cidade mais recente (RF-05, RNF-05).
   interpretar as datas locais.
 - **Condições atuais:** solicitar `current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,surface_pressure`.
 - **Previsão diária:** solicitar
-  `daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max`
+  `daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max`
   e `forecast_days=5`.
 - **Exemplo de URL para condições atuais:**
   `https://api.open-meteo.com/v1/forecast?latitude=-23.5475&longitude=-46.6361&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,surface_pressure&timezone=auto&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timeformat=iso8601`
@@ -328,7 +343,7 @@ cidade mais recente (RF-05, RNF-05).
   ```
 
 - **Exemplo de URL para previsão diária:**
-  `https://api.open-meteo.com/v1/forecast?latitude=-23.5475&longitude=-46.6361&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&forecast_days=5&timezone=auto&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timeformat=iso8601`
+  `https://api.open-meteo.com/v1/forecast?latitude=-23.5475&longitude=-46.6361&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max&forecast_days=5&timezone=auto&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timeformat=iso8601`
 - **Resposta resumida de previsão:**
 
   Exemplo esquemático; valores ilustrativos.
@@ -341,6 +356,7 @@ cidade mais recente (RF-05, RNF-05).
       "weather_code": "wmo code",
       "temperature_2m_max": "°C",
       "temperature_2m_min": "°C",
+      "precipitation_probability_max": "%",
       "precipitation_sum": "mm",
       "wind_speed_10m_max": "km/h"
     },
@@ -355,6 +371,7 @@ cidade mais recente (RF-05, RNF-05).
       "weather_code": [2, 3, 61, 2, 1],
       "temperature_2m_max": [27.1, 25.8, 23.2, 26.0, 27.4],
       "temperature_2m_min": [18.3, 17.9, 18.1, 17.5, 18.0],
+      "precipitation_probability_max": [10, 30, 80, 20, 0],
       "precipitation_sum": [0.0, 0.2, 5.4, 0.0, 0.0],
       "wind_speed_10m_max": [14.0, 18.4, 21.2, 16.8, 13.1]
     }
@@ -377,6 +394,7 @@ cidade mais recente (RF-05, RNF-05).
   | `daily.temperature_2m_min[i]`, `temperature_2m_max[i]` | `ForecastDay.minTemperatureC`, `maxTemperatureC` |
   | `daily.weather_code[i]` | Código WMO conhecido para `ForecastDay.conditionLabel`; desconhecido ou ausente vira indisponível |
   | `daily.precipitation_sum[i]` | `ForecastDay.precipitationMm` |
+  | `daily.precipitation_probability_max[i]` | `ForecastDay.precipitationProbabilityPercent`; validar valor finito de 0 a 100 inclusive e unidade `%`, sem inferir de mm |
   | `daily.wind_speed_10m_max[i]` | `ForecastDay.windKmh` |
   | `timezone` | `City.timezone`; usar para associar `daily.time` às datas locais |
 
@@ -410,7 +428,9 @@ provedor ou a arquitetura; um proxy pode ocultar o IP do cliente, mas não deixa
 de transmitir a consulta ao provedor.
 
 **Gate P1 — semântica do provedor:** confirmar na documentação do Open-Meteo
-quais campos satisfazem as definições de precipitação atual e diária, qual
+quais campos satisfazem as definições de precipitação atual e diária e
+probabilidade diária de chuva (`precipitation_probability_max`, proposta ainda
+pendente de confirmação neste gate), qual
 timestamp representa a atualização exigida por RNF-04 e qual tabela WMO usar.
 Não presumir que o horário da resposta representa a atualização dos dados. Se
 o provedor não atender RF-02, RF-03 ou RNF-04, revisar a especificação antes de
